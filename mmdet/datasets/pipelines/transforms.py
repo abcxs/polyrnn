@@ -1,5 +1,6 @@
 import copy
 import inspect
+from functools import reduce
 
 import mmcv
 import numpy as np
@@ -268,6 +269,10 @@ class Resize(object):
                     backend=self.backend)
             results['gt_semantic_seg'] = gt_seg
 
+    def _resize_polygons(self, results):
+        for key in results.get('polygon_fields', []):
+            results[key] = [polygon * results['scale_factor'][:2] for polygon in results[key]]        
+
     def __call__(self, results):
         """Call function to resize images, bounding boxes, masks, semantic
         segmentation map.
@@ -303,6 +308,7 @@ class Resize(object):
         self._resize_bboxes(results)
         self._resize_masks(results)
         self._resize_seg(results)
+        self._resize_polygons(results)
         return results
 
     def __repr__(self):
@@ -413,6 +419,32 @@ class RandomFlip(object):
             raise ValueError(f"Invalid flipping direction '{direction}'")
         return flipped
 
+    def polygon_flip(self, polygons, img_shape, direction):
+        # torch 和 numpy 在split函数存在较大差别
+        sizes = [polygon.shape[0] for polygon in polygons]
+        start = 0
+        poly_size = []
+        for size in sizes[:-1]:
+            start += size
+            poly_size.append(start)
+        flipped = np.concatenate(polygons, axis=0)
+        if direction == 'horizontal':
+            w = img_shape[1]
+            flipped[:, 0] = w - flipped[:, 0]
+        elif direction == 'vertical':
+            h = img_shape[0]
+            flipped[:, 1] = h - flipped[:, 1]
+        elif direction == 'diagonal':
+            w = img_shape[1]
+            h = img_shape[0]
+            flipped[:, 0] = w - flipped[:, 0]
+            flipped[:, 1] = h - flipped[:, 1]
+        else:
+            raise ValueError(f"Invalid flipping direction '{direction}'")
+        
+        flipped = np.split(flipped, poly_size, axis=0)
+        return flipped
+
     def __call__(self, results):
         """Call function to flip bounding boxes, masks, semantic segmentation
         maps.
@@ -466,6 +498,10 @@ class RandomFlip(object):
             for key in results.get('seg_fields', []):
                 results[key] = mmcv.imflip(
                     results[key], direction=results['flip_direction'])
+            
+            # flip polygons
+            for key in results.get('polygon_fields', []):
+                results[key] = self.polygon_flip(results[key], results['img_shape'], results['flip_direction'])
         return results
 
     def __repr__(self):
