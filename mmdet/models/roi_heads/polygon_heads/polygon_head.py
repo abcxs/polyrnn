@@ -50,7 +50,7 @@ class PolyRnnHead(nn.Module):
                  in_channels=256,
                  conv_kernel_size=3,
                  conv_out_channels=128,
-                 hidden_channels=128,
+                 hidden_channels=64,
                  num_layers=2,
                  feat_size=7,
                  max_time_step=10,
@@ -234,7 +234,7 @@ class PolygonHead(nn.Module):
             first_vertex = gt_polygons[:, 0]
 
         polygon_pred = self.polyrnn_head(x, first_vertex, gt_polygons)
-        results = dict(polygon_pred=polygon_pred, vertex_pred=vertex_pred)
+        results = dict(polygon_pred=polygon_pred, vertex_pred=vertex_pred, first_vertex=first_vertex)
         return results
 
     def get_targets(self, sampling_results, gt_polygons, rcnn_train_cfg):
@@ -264,8 +264,9 @@ class PolygonHead(nn.Module):
 
         return dict(polygon_loss=polygon_loss, vertex_loss=vertex_loss)
 
-    def get_polyons(self, polygon_pred, det_bboxes, det_labels, rcnn_test_cfg,
-                      ori_shape, scale_factor, rescale, num_classes=1, mask_format=True):
+
+    def get_polyons(self, first_vertex, polygon_pred, det_bboxes, det_labels, rcnn_test_cfg,
+                      ori_shape, scale_factor, rescale, num_classes=1, mask_format=True, det_others=None):
         assert mask_format is True
         # [len(det_bboxes), time_step, class]
         polygon_pred = torch.softmax(polygon_pred, dim=-1)
@@ -306,11 +307,16 @@ class PolygonHead(nn.Module):
             if len(valid_poly):
                 valid_poly = valid_poly[0]
                 polygon_ins = polygon_ins[:valid_poly]
+
+            polygon_ins = [first_vertex[i].item()] + polygon_ins.tolist()
             poly_xy = []
+            
             for p in polygon_ins:
                 x = p % grid_w
                 y = p // grid_w
                 poly_xy.append([x, y])
+            # if det_others[i] >= 0.9:
+            #     print(det_others[i], len(poly_xy), poly_xy , [x1, y1])
             poly_xy = np.array(poly_xy).reshape(-1, 2) * ([(x2 - x1) / grid_w, (y2 - y1) / grid_w]) + [x1, y1]
             poly_xy = poly_xy.astype(np.int32)
             im_mask[i] = cv2.fillPoly(im_mask[i], [poly_xy], 255)

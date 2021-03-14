@@ -80,7 +80,8 @@ def polygon_target_single(pos_proposals, pos_assigned_gt_inds, gt_polygons, cfg)
                 polygon_target.append(poly_)
 
                 temp_mask = np.zeros(max_polyon_len)
-                temp_mask[:length] = 1
+                # 同时训练最后一个节点，即为终止点
+                temp_mask[:length + 1] = 1
                 polygon_mask.append(temp_mask)
 
                 proposal_inds.append(i)

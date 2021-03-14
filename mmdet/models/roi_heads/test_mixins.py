@@ -1,6 +1,6 @@
 import logging
 import sys
-
+import numpy as np
 import torch
 
 from mmdet.core import (bbox2roi, bbox_mapping, merge_aug_bboxes,
@@ -303,12 +303,13 @@ class PolygonTestMixin(object):
             polygon_rois = bbox2roi(_bboxes)
             polygon_results = self._polygon_forward(x, polygon_rois)
             polygon_pred = polygon_results['polygon_pred']
+            first_vertex = polygon_results['first_vertex']
             # split batch mask prediction back to each image
             num_mask_roi_per_img = [
                 det_bbox.shape[0] for det_bbox in det_bboxes
             ]
             polygon_preds = polygon_pred.split(num_mask_roi_per_img, 0)
-
+            first_vertexs = first_vertex.split(num_mask_roi_per_img, 0)
             # apply mask post-processing to each image individually
             polygon_results = []
             for i in range(num_imgs):
@@ -316,9 +317,9 @@ class PolygonTestMixin(object):
                     polygon_results.append(
                         [[] for _ in range(self.bbox_head.num_classes)])
                 else:
-                    polygon_result = self.polygon_head.get_polyons(
+                    polygon_result = self.polygon_head.get_polyons(first_vertexs[i],
                             polygon_preds[i], _bboxes[i], det_labels[i],
                             self.test_cfg, ori_shapes[i], scale_factors[i],
-                            rescale, self.bbox_head.num_classes)
+                            rescale, self.bbox_head.num_classes, det_others=det_bboxes[i][:, 4:])
                     polygon_results.append(polygon_result)
         return polygon_results

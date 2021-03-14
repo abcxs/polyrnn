@@ -69,7 +69,7 @@ model = dict(
             polyrnn_head=dict(
                 type='PolyRnnHead',
                 feat_size=28,
-                max_time_step=30,
+                max_time_step=20,
             ))),
     # model training and testing settings
     train_cfg=dict(
@@ -107,7 +107,7 @@ model = dict(
                 ignore_iof_thr=-1),
             sampler=dict(
                 type='RandomSampler',
-                num=512,
+                num=256,
                 pos_fraction=0.25,
                 neg_pos_ub=-1,
                 add_gt_as_proposals=True),
@@ -115,7 +115,7 @@ model = dict(
             poly_iou_thresh=0.0,
             poly_radius=1,
             polygon_size=28,
-            max_polygon_len=30,
+            max_polygon_len=20,
             pos_weight=-1,
             debug=False)),
     test_cfg=dict(
@@ -138,13 +138,13 @@ model = dict(
 
 
 dataset_type = 'BuildingDataset'
-data_root = 'data/building/yunnan/'
+data_root = 'data/building/yunnan_512/'
 img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(type='LoadAnnotations', with_bbox=True, with_mask=True, with_polygon=True),
-    dict(type='Resize', img_scale=(1333, 1024), keep_ratio=True),
+    dict(type='Resize', img_scale=(1333, 512), keep_ratio=True),
     dict(type='RandomFlip', flip_ratio=0.5),
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
@@ -155,7 +155,7 @@ test_pipeline = [
     dict(type='LoadImageFromFile'),
     dict(
         type='MultiScaleFlipAug',
-        img_scale=(1333, 1024),
+        img_scale=(1333, 512),
         flip=False,
         transforms=[
             dict(type='Resize', keep_ratio=True),
