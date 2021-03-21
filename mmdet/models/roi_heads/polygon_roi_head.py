@@ -1,31 +1,37 @@
 import torch
 
-from mmdet.core import bbox2result, bbox2roi, build_assigner, build_sampler
+from mmdet.core import bbox2result, bbox2roi, build_assigner, build_sampler, bbox_rescale
 from ..builder import HEADS, build_head, build_roi_extractor
 from .base_roi_head import BaseRoIHead
 from .test_mixins import BBoxTestMixin, MaskTestMixin
 from .standard_roi_head import StandardRoIHead
-from ..utils import FusionModule
+from ..utils import build_module_util
 from .test_mixins import PolygonTestMixin
 
 @HEADS.register_module()
 class PolygonRoIHead(StandardRoIHead, PolygonTestMixin):
     """Simplest base roi head including one bbox head and one mask head."""
-    def __init__(self, polygon_head=None, polygon_roi_extractor=None, polygon_scale_factor=1, *args, **kwargs):
+    def __init__(self, 
+                 polygon_head=None, 
+                 polygon_roi_extractor=None, 
+                 polygon_scale_factor=None, 
+                 fusion_module=dict(type='FusionModule', in_channels=256, refine_level=1), 
+                 *args, 
+                 **kwargs):
         super(PolygonRoIHead, self).__init__(*args, **kwargs)
+        self.polygon_scale_factor = polygon_scale_factor
         if polygon_head is not None:
-            self.init_polygon_head(polygon_roi_extractor, polygon_head)
+            self.init_polygon_head(polygon_roi_extractor, polygon_head, fusion_module)
 
     @property
     def with_polygon(self):
         """bool: whether the RoI head contains a `polygon_head`"""
         return hasattr(self, 'polygon_head') and self.polygon_head is not None
 
-    def init_polygon_head(self, polygon_roi_extractor, polygon_head):
+    def init_polygon_head(self, polygon_roi_extractor, polygon_head, fusion_module):
         self.polygon_roi_extractor = build_roi_extractor(polygon_roi_extractor)
         self.polygon_head = build_head(polygon_head)
-        # 暂时手动添加配置
-        self.fusion_module = FusionModule(256, refine_level=1)
+        self.fusion_module = build_module_util(fusion_module)
 
     def init_weights(self, pretrained):
         """Initialize the weights in head.
@@ -104,13 +110,21 @@ class PolygonRoIHead(StandardRoIHead, PolygonTestMixin):
         if self.with_polygon:
             # 有些参数，部分模型需要
             # 但由于此处只有polygon模块，故暂时严格限定
-            polygon_results = self._polygon_forward_train(x, sampling_results, gt_polygons)
+            polygon_results = self._polygon_forward_train(x, sampling_results, gt_polygons, img_metas)
             losses.update(polygon_results['loss_polygon'])
         return losses
 
-    def _polygon_forward_train(self, inputs, sampling_results, gt_polygons):
+    def _polygon_forward_train(self, inputs, sampling_results, gt_polygons, img_metas):
         # 由于只能保留roi与gt的交，此时需要对pos_rois进行筛选
         # train_cfg 和 test_cfg 为rcnn部分
+        if self.polygon_scale_factor:
+            for res, img_meta in zip(sampling_results, img_metas):
+                h, w = img_metas[0]['img_shape'][:2]
+                bboxes = bbox_rescale(res.pos_bboxes, self.polygon_scale_factor)
+                assert bboxes.shape[-1] == 4
+                bboxes[0::2].clamp_(0, w - 1)
+                bboxes[1::2].clamp_(0, h - 1)
+                res.pos_bboxes = bboxes
         proposal_inds_list, polygon_targets, polygon_masks, vertex_targets = self.polygon_head.get_targets(sampling_results, gt_polygons, self.train_cfg)
         pos_rois = bbox2roi([res.pos_bboxes[proposal_inds] for res, proposal_inds in zip(sampling_results, proposal_inds_list)])
 

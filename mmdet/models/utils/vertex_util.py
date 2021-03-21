@@ -3,10 +3,36 @@ import torch.nn as nn
 import torch.nn.functional as F
 from mmcv.cnn import ConvModule, xavier_init
 from mmcv.cnn.bricks import NonLocal2d
+from .builder import MODULE_UTIL
 
+class Bottleneck(nn.Module):
+
+    def __init__(self,
+                 in_channels,
+                 mid_channels,
+                 dilation,
+                 norm_cfg=dict(type='BN'),
+                 act_cfg=dict(type='ReLU')):
+        super(Bottleneck, self).__init__()
+        norm_cfg_ = dict(type='GN', num_groups=4)
+        self.conv1 = ConvModule(in_channels, mid_channels, kernel_size=1, padding=0, norm_cfg=norm_cfg_, act_cfg=act_cfg)
+        norm_cfg_ = dict(type='GN', num_groups=1)
+        self.conv2 = ConvModule(mid_channels, mid_channels, kernel_size=3, padding=dilation, dilation=dilation, norm_cfg=norm_cfg_, act_cfg=act_cfg)
+        norm_cfg_ = dict(type='GN', num_groups=4)
+        self.conv3 = ConvModule(mid_channels, in_channels, kernel_size=1, padding=0, norm_cfg=norm_cfg_, act_cfg=act_cfg)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        identity = x
+        out = self.conv1(x)
+        out = self.conv2(out)
+        out = self.conv3(out)
+        out = out + identity
+        return out
+
+@MODULE_UTIL.register_module()
 class FusionModule(nn.Module):
     def __init__(self, in_channels, refine_level=2, refine_type=None, conv_cfg=None,
-                 norm_cfg=None):
+                 norm_cfg=None, num_convs=0, dilations=None):
         super(FusionModule, self).__init__()
         self.in_channels = in_channels
         self.refine_level = refine_level
@@ -29,6 +55,14 @@ class FusionModule(nn.Module):
                 use_scale=False,
                 conv_cfg=self.conv_cfg,
                 norm_cfg=self.norm_cfg)
+        
+        self.convs = nn.ModuleList()
+        if dilations is None:
+            dilations = [1 for _ in range(num_convs)]
+        else:
+            assert len(dilations) == num_convs
+        for dilation in dilations:
+            self.convs.append(Bottleneck(self.in_channels, self.in_channels // 4, dilation=dilation))
 
     def init_weights(self):
         """Initialize the weights of FPN module."""
@@ -54,6 +88,9 @@ class FusionModule(nn.Module):
 
         if self.refine_type is not None:
             bsf = self.refine(bsf)
+            
+        for conv in self.convs:
+            bsf = conv(bsf)
 
         return bsf
 

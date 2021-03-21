@@ -48,8 +48,12 @@ def polygon_target_single(pos_proposals, pos_assigned_gt_inds, gt_polygons, cfg)
             x1, y1, x2, y2 = proposal[:4]
             poly_proposal = shgeo.Polygon(
                 [[x1, y1], [x1, y2], [x2, y2], [x2, y1]])
+            
+            if not (poly_ins.is_valid and poly_proposal.is_valid):
+                continue
+                
             inter_polys = poly_ins.intersection(poly_proposal)
-
+    
             if type(inter_polys) != shgeo.polygon.Polygon and type(inter_polys) != shgeo.multipolygon.MultiPolygon:
                 continue
             if filter_multi_part and type(inter_polys) == shgeo.multipolygon.MultiPolygon:
@@ -61,7 +65,13 @@ def polygon_target_single(pos_proposals, pos_assigned_gt_inds, gt_polygons, cfg)
                 if inter_poly.area / poly_ins.area < poly_iou_thresh:
                     continue
                 # 由于是笛卡尔坐标系，而传入的是opencv坐标系的结果，设置sign为正数，从而获得顺时针
-                inter_poly = shgeo.polygon.orient(inter_poly, sign=1)
+                try:
+                    inter_poly = shgeo.polygon.orient(inter_poly, sign=1)
+                except Exception as e:
+                    print(str(e))
+                    print(type(inter_poly), type(inter_polys))
+                    continue
+                    
                 temp_inter_poly = (np.array(list(inter_poly.exterior.coords)[
                                    :-1]) - [x1, y1]) / [x2 - x1 + EPS, y2 - y1 + EPS]
                 # 投影到grid_size之后，不会出现满值

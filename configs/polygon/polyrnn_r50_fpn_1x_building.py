@@ -1,10 +1,11 @@
 _base_ = [
+    '../_base_/datasets/building_detection.py',
     '../_base_/schedules/schedule_1x.py', '../_base_/default_runtime.py'
 ]
 
 model = dict(
     type='FasterRCNN',
-    pretrained='torchvision://resnet50',
+    pretrained='./checkpoints/resnet50-19c8e357.pth',
     backbone=dict(
         type='ResNet',
         depth=50,
@@ -56,6 +57,11 @@ model = dict(
             loss_cls=dict(
                 type='CrossEntropyLoss', use_sigmoid=False, loss_weight=1.0),
             loss_bbox=dict(type='L1Loss', loss_weight=1.0)),
+        fusion_module=dict(
+            type='FusionModule',
+            in_channels=256,
+            refine_level=1,
+            refine_type=None),
         polygon_roi_extractor=dict(
             type='SingleRoIExtractor',
             roi_layer=dict(type='RoIAlign', output_size=28, sampling_ratio=0),
@@ -64,13 +70,19 @@ model = dict(
         polygon_head=dict(
             type='PolygonHead', 
             vertex_head=dict(
-                type='VertexHead'
+                type='VertexHead',
+                polygon_size=28
             ),
             polyrnn_head=dict(
                 type='PolyRnnHead',
                 feat_size=28,
+                polygon_size=28,
                 max_time_step=20,
-            ))),
+            ),
+            loss_vertex=dict(
+                type='GaussianFocalLoss', alpha=2.0, gamma=4.0, loss_weight=1),
+            loss_polygon=dict(
+                type='CrossEntropyLoss', use_mask=False, loss_weight=1.0))),
     # model training and testing settings
     train_cfg=dict(
         rpn=dict(
@@ -137,54 +149,32 @@ model = dict(
 
 
 
-dataset_type = 'BuildingDataset'
-data_root = 'data/building/yunnan_512/'
 img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
 train_pipeline = [
     dict(type='LoadImageFromFile'),
-    dict(type='LoadAnnotations', with_bbox=True, with_mask=True, with_polygon=True),
+    dict(type='LoadAnnotations', with_bbox=True, with_polygon=True),
     dict(type='Resize', img_scale=(1333, 512), keep_ratio=True),
     dict(type='RandomFlip', flip_ratio=0.5),
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
     dict(type='DefaultFormatBundle'),
-    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_masks', 'gt_polygons']),
-]
-test_pipeline = [
-    dict(type='LoadImageFromFile'),
-    dict(
-        type='MultiScaleFlipAug',
-        img_scale=(1333, 512),
-        flip=False,
-        transforms=[
-            dict(type='Resize', keep_ratio=True),
-            dict(type='RandomFlip'),
-            dict(type='Normalize', **img_norm_cfg),
-            dict(type='Pad', size_divisor=32),
-            dict(type='ImageToTensor', keys=['img']),
-            dict(type='Collect', keys=['img']),
-        ])
+    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_polygons']),
 ]
 data = dict(
     samples_per_gpu=1,
-    workers_per_gpu=2,
-    train=dict(
-        type=dataset_type,
-        ann_file=data_root + 'train/train.json',
-        img_prefix=data_root + 'train/JPEGImages/',
-        pipeline=train_pipeline),
-    val=dict(
-        type=dataset_type,
-        ann_file=data_root + 'val/val.json',
-        img_prefix=data_root + 'val/JPEGImages/',
-        pipeline=test_pipeline),
-    test=dict(
-        type=dataset_type,
-        ann_file=data_root + 'val/val.json',
-        img_prefix=data_root + 'val/JPEGImages/',
-        pipeline=test_pipeline))
+    train=dict(pipeline=train_pipeline))
+
+
+log_config = dict(
+    interval=50,
+    hooks=[
+        dict(type='TextLoggerHook'),
+        dict(type='TensorboardLoggerHook')
+    ])
+
 evaluation = dict(metric=['bbox', 'segm'])
-optimizer = dict(lr=0.001)
+
+optimizer = dict(lr=0.005)
 lr_config = dict(step=[16, 22])
 runner = dict(max_epochs=24)

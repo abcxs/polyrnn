@@ -8,9 +8,10 @@ from mmdet.core import class_to_grid, polygon_target
 from mmdet.models.builder import HEADS, build_loss, build_head
 from torch.nn.modules.utils import _pair
 import cv2
+
 @HEADS.register_module()
 class VertexHead(nn.Module):
-    def __init__(self, num_convs=2, in_channels=256, conv_kernel_size=3, conv_out_channels=256, conv_cfg=None, norm_cfg=None):
+    def __init__(self, num_convs=2, in_channels=256, conv_kernel_size=3, conv_out_channels=256, polygon_size=28, conv_cfg=None, norm_cfg=None):
         super(VertexHead, self).__init__()
         self.num_convs = num_convs
         self.in_channels = in_channels
@@ -31,6 +32,7 @@ class VertexHead(nn.Module):
                     conv_cfg=conv_cfg,
                     norm_cfg=norm_cfg))
         self.conv_logits = Conv2d(self.conv_out_channels, 1, 1)
+        self.polygon_size = polygon_size
 
     def init_weights(self):
         # convs已被初始化
@@ -39,6 +41,9 @@ class VertexHead(nn.Module):
         nn.init.constant_(self.conv_logits.bias, 0)
 
     def forward(self, x):
+        if self.polygon_size != x.shape[-1]:
+            size = _pair(self.polygon_size)
+            x = F.interpolate(x, size=size)
         for conv in self.convs:
             x = conv(x)
         return self.conv_logits(x)
@@ -53,8 +58,13 @@ class PolyRnnHead(nn.Module):
                  hidden_channels=64,
                  num_layers=2,
                  feat_size=7,
+                 polygon_size=28,
                  max_time_step=10,
                  use_attention=False,
+                 attention_type=1,
+                 use_coord=False,
+                 coord_type=1,
+                 use_bn=False,
                  conv_cfg=None,
                  norm_cfg=None):
         super(PolyRnnHead, self).__init__()
@@ -65,14 +75,23 @@ class PolyRnnHead(nn.Module):
         self.conv_out_channels = conv_out_channels
         self.hidden_channels = hidden_channels
         self.num_layers = num_layers
-        self.feat_size = feat_size
+        
         self.max_time_step = max_time_step
         self.use_attention = use_attention
-
+        self.use_coord = use_coord
+        self.coord_type = coord_type
+        self.use_bn = use_bn
+        if polygon_size is None:
+            polygon_size = feat_size
+        self.feat_size = feat_size
+        self.polygon_size = polygon_size
+        
         self.convs = nn.ModuleList()
         for i in range(self.num_convs):
             in_channels = (
                 self.in_channels if i == 0 else self.conv_out_channels)
+            if i == 0 and use_coord:
+                in_channels += 2
             padding = (self.conv_kernel_size - 1) // 2
             self.convs.append(
                 ConvModule(
@@ -85,6 +104,10 @@ class PolyRnnHead(nn.Module):
 
         self.conv_x = nn.ModuleList()
         self.conv_h = nn.ModuleList()
+        self.bn_x = nn.ModuleList()
+        self.bn_h = nn.ModuleList()
+        self.bn_c = nn.ModuleList()
+        
 
         padding = conv_kernel_size // 2
         for l in range(self.num_layers):
@@ -92,19 +115,29 @@ class PolyRnnHead(nn.Module):
                 in_channels = self.hidden_channels
             else:
                 in_channels = self.conv_out_channels + 3
-
+                if self.use_coord and self.coord_type == 2:
+                    in_channels += 2
             self.conv_x.append(Conv2d(
                 in_channels, 4 * hidden_channels, kernel_size=conv_kernel_size, padding=padding))
             self.conv_h.append(Conv2d(hidden_channels, 4 * hidden_channels,
                                       kernel_size=conv_kernel_size, padding=padding))
+            
+            if self.use_bn:
+                self.bn_x.append(nn.ModuleList([nn.BatchNorm2d(4*hidden_channels) for i in range(max_time_step - 1)]))
+                self.bn_h.append(nn.ModuleList([nn.BatchNorm2d(4*hidden_channels) for i in range(max_time_step - 1)]))
+                self.bn_c.append(nn.ModuleList([nn.BatchNorm2d(hidden_channels) for i in range(max_time_step - 1)]))
 
-        if self.use_attention:
+        if self.use_attention and attention_type != 3:
             self.conv_atten = ConvModule(
-                hidden_channels * num_layers, 1, kernel_size=1)
+                hidden_channels * num_layers, 1, kernel_size=1, act_cfg=None)
 
         self.fc_out = nn.Linear(self.feat_size ** 2 *
-                                hidden_channels, self.feat_size ** 2 + 1)
-
+                                hidden_channels, self.polygon_size ** 2 + 1)
+        self.attention = getattr(self, 'attention_%d' % attention_type)
+        if attention_type == 3:
+            self.conv_atten = ConvModule(hidden_channels * num_layers, self.conv_out_channels, kernel_size=1, act_cfg=None)
+            self.atten_hidden = ConvModule(self.conv_out_channels, 1, kernel_size=1, act_cfg=None)
+            
     def init_weights(self):
         for conv in self.conv_x:
             nn.init.kaiming_normal_(conv.weight,
@@ -117,7 +150,7 @@ class PolyRnnHead(nn.Module):
         nn.init.normal_(self.fc_out.weight, 0, 0.01)
         nn.init.constant_(self.fc_out.bias, 0)
 
-    def rnn_step(self, input, cur_state):
+    def rnn_step(self, input, cur_state, time):
         out_state = []
         for l in range(self.num_layers):
             hx, cx = cur_state[l]
@@ -126,8 +159,13 @@ class PolyRnnHead(nn.Module):
                 inp = input
             else:
                 inp = out_state[-1][0]
-
-            gates = self.conv_x[l](inp) + self.conv_h[l](hx)
+            conv_x = self.conv_x[l](inp)
+            if self.use_bn:
+                conv_x = self.bn_x[l][time](conv_x)
+            conv_h = self.conv_h[l](hx)
+            if self.use_bn:
+                conv_h = self.bn_h[l][time](conv_h)
+            gates = conv_x + conv_h
             ingate, forgetgate, cellgate, outgate = gates.chunk(4, 1)
 
             ingate = torch.sigmoid(ingate)
@@ -136,12 +174,14 @@ class PolyRnnHead(nn.Module):
             outgate = torch.sigmoid(outgate)
 
             cy = forgetgate * cx + ingate * cellgate
+            if self.use_bn:
+                cy = self.bn_c[l][time](cy)
             hy = outgate * torch.tanh(cy)
 
             out_state.append([hy, cy])
         return out_state
 
-    def attention(self, x, rnn_state):
+    def attention_1(self, x, rnn_state):
         if not self.use_attention:
             return x
         n, _, h, w = x.shape
@@ -151,12 +191,52 @@ class PolyRnnHead(nn.Module):
         # 待测试
         atten = torch.softmax(atten.reshape(n, h * w), -1).view(n, 1, h, w)
         return x * atten
+    
+    def attention_2(self, x, rnn_state):
+        if not self.use_attention:
+            return x
+        n, _, h, w = x.shape
+        h_cat = torch.cat([state[0] for state in rnn_state], dim=1)
+        atten = self.conv_atten(h_cat)
+        # nonlocal sigmoid 或者 softmax
+        # 待测试
+        atten = torch.softmax(atten.reshape(n, h * w), -1).view(n, 1, h, w)
+        return x * atten + x
+    
+    def attention_3(self, x, rnn_state):
+        if not self.use_attention:
+            return x
+        n, _, h, w = x.shape
+        h_cat = torch.cat([state[0] for state in rnn_state], dim=1)
+        atten = F.relu(self.conv_atten(h_cat) + x)
+        atten = self.atten_hidden(atten)
+        atten = torch.softmax(atten.reshape(n, h * w), -1).view(n, 1, h, w)
+        return x * atten
+    
+    def attention_4(self, x, rnn_state):
+        if not self.use_attention:
+            return x
+        n, _, h, w = x.shape
+        h_cat = torch.cat([state[0] for state in rnn_state], dim=1)
+        atten = self.conv_atten(h_cat)
+        # nonlocal sigmoid 或者 softmax
+        # 待测试
+        atten = torch.sigmoid(atten)
+        return x * atten
+    
 
     def forward(self, x, first_vertex, gt_polygons=None):
         # 测试流程时，gt_polygons可为None
         n, c, h, w = x.shape
         device = x.device
-
+        if self.use_coord:
+            x_range = torch.linspace(-1, 1, x.shape[-1], device=x.device)
+            y_range = torch.linspace(-1, 1, x.shape[-2], device=x.device)
+            y_range, x_range = torch.meshgrid(y_range, x_range)
+            y_range = y_range.expand([x.shape[0], 1, -1, -1])
+            x_range = x_range.expand([x.shape[0], 1, -1, -1])
+            coord_feat = torch.cat([x_range, y_range], 1)
+            x = torch.cat([x, coord_feat], 1)
         for conv in self.convs:
             x = conv(x)
 
@@ -182,9 +262,12 @@ class PolyRnnHead(nn.Module):
 
         for t in range(1, self.max_time_step):
             x = self.attention(x, rnn_state)
-            inp = torch.cat([x, v_pred2, v_pred1, v_first], dim=1)
+            if self.use_coord and self.coord_type == 2:
+                inp = torch.cat([x, v_pred2, v_pred1, v_first, coord_feat], dim=1)
+            else:
+                inp = torch.cat([x, v_pred2, v_pred1, v_first], dim=1)
 
-            rnn_state = self.rnn_step(inp, rnn_state)
+            rnn_state = self.rnn_step(inp, rnn_state, t - 1)
 
             h_final = rnn_state[-1][0].view(n, -1)
             logits_t = self.fc_out(h_final)
