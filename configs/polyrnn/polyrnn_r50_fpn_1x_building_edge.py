@@ -70,20 +70,27 @@ model = dict(
         polygon_head=dict(
             type='PolygonHead', 
             vertex_head=dict(
-                type='VertexHead',
-                polygon_size=28
+                type='VertexEdgeHead',
+                num_convs=4, 
+                norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
+                polygon_size=28,
+                conv_edge_channels=64, 
+                conv_vertex_channels=64
             ),
             polyrnn_head=dict(
                 type='PolyRnnHead',
+                num_convs=4, 
+                norm_cfg=dict(type='GN', num_groups=32, requires_grad=True),
                 feat_size=28,
                 polygon_size=28,
                 max_time_step=20,
                 dilation_params=dict(with_dilation=False, dilations=[3, 3, 3, 3], num_convs=4),
                 weight_kernel_params=dict(kernel_size=1, type='constant'),
-                act_test='softmax'
+                act_test='softmax',
+                vertex_edge_params=dict(vertex_channels=64, edge_channels=64, type=5)
             ),
             loss_vertex=dict(
-                type='GaussianFocalLoss', alpha=2.0, gamma=4.0, loss_weight=1),
+                type='GaussianFocalLoss', alpha=2.0, gamma=4.0, loss_weight=10.0),
             loss_polygon=dict(
                 type='CrossEntropyLoss', use_mask=False, loss_weight=1.0), 
             loss_type=0)),
@@ -129,7 +136,7 @@ model = dict(
                 add_gt_as_proposals=True),
             epsilon=1,
             remove_abundant=False,
-            filter_multi_part=False,
+            filter_multi_part=True,
             poly_iou_thresh=0.0,
             poly_radius=1,
             polygon_size=28,

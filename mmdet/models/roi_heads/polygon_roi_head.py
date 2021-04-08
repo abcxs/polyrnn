@@ -22,6 +22,7 @@ class PolygonRoIHead(StandardRoIHead, PolygonTestMixin):
         self.polygon_scale_factor = polygon_scale_factor
         if polygon_head is not None:
             self.init_polygon_head(polygon_roi_extractor, polygon_head, fusion_module)
+        
 
     @property
     def with_polygon(self):
@@ -32,6 +33,7 @@ class PolygonRoIHead(StandardRoIHead, PolygonTestMixin):
         self.polygon_roi_extractor = build_roi_extractor(polygon_roi_extractor)
         self.polygon_head = build_head(polygon_head)
         self.fusion_module = build_module_util(fusion_module)
+        self.polygon_head.train_cfg = self.train_cfg
 
     def init_weights(self, pretrained):
         """Initialize the weights in head.
@@ -99,24 +101,26 @@ class PolygonRoIHead(StandardRoIHead, PolygonTestMixin):
                                                     gt_bboxes, gt_labels,
                                                     img_metas)
             losses.update(bbox_results['loss_bbox'])
-
+        mask_pred = None
         # mask head forward and loss
         if self.with_mask:
             mask_results = self._mask_forward_train(x, sampling_results,
                                                     bbox_results['bbox_feats'],
                                                     gt_masks, img_metas)
             losses.update(mask_results['loss_mask'])
-
+            mask_pred = mask_results['mask_pred']
+        
         if self.with_polygon:
             # 有些参数，部分模型需要
             # 但由于此处只有polygon模块，故暂时严格限定
-            polygon_results = self._polygon_forward_train(x, sampling_results, gt_polygons, img_metas)
+            polygon_results = self._polygon_forward_train(x, sampling_results, gt_polygons, img_metas, mask_pred)
             losses.update(polygon_results['loss_polygon'])
         return losses
 
-    def _polygon_forward_train(self, inputs, sampling_results, gt_polygons, img_metas):
+    def _polygon_forward_train(self, inputs, sampling_results, gt_polygons, img_metas, mask_pred=None):
         # 由于只能保留roi与gt的交，此时需要对pos_rois进行筛选
         # train_cfg 和 test_cfg 为rcnn部分
+        
         if self.polygon_scale_factor:
             for res, img_meta in zip(sampling_results, img_metas):
                 h, w = img_metas[0]['img_shape'][:2]
@@ -125,18 +129,26 @@ class PolygonRoIHead(StandardRoIHead, PolygonTestMixin):
                 bboxes[0::2].clamp_(0, w - 1)
                 bboxes[1::2].clamp_(0, h - 1)
                 res.pos_bboxes = bboxes
-        proposal_inds_list, polygon_targets, polygon_masks, vertex_targets = self.polygon_head.get_targets(sampling_results, gt_polygons, self.train_cfg)
+        proposal_inds_list, polygon_targets, polygon_masks, vertex_targets, polygon_vertex_targets, edge_targets, offset_targets = self.polygon_head.get_targets(sampling_results, gt_polygons, self.train_cfg)
+#         for res, proposal_inds in zip(sampling_results, proposal_inds_list):
+#             assert proposal_inds.min() >= 0 and proposal_inds.max() < len(res.pos_bboxes), f'{proposal_inds.min()}, {proposal_inds.max()}, {len(res.pos_bboxes)}'
         pos_rois = bbox2roi([res.pos_bboxes[proposal_inds] for res, proposal_inds in zip(sampling_results, proposal_inds_list)])
-
-        polygon_results = self._polygon_forward(inputs, pos_rois, polygon_targets)
-        loss_polygon = self.polygon_head.loss(polygon_results['polygon_pred'], polygon_results['vertex_pred'], polygon_targets, polygon_masks, vertex_targets)
+        if mask_pred is not None:
+            pos_num = [len(res.pos_bboxes) for res in sampling_results]
+            mask_preds = torch.split(mask_pred, pos_num, dim=0)
+            mask_preds = [mask_pred[proposal_inds] for mask_pred, proposal_inds in zip(mask_preds, proposal_inds_list)]
+            mask_pred = torch.cat(mask_preds, dim=0)
+            
+        polygon_results = self._polygon_forward(inputs, pos_rois, polygon_targets, mask_pred)
+#         print()
+        loss_polygon = self.polygon_head.loss(polygon_results['polygon_pred'], polygon_results['vertex_pred'], polygon_results['edge_pred'], polygon_results['offset_pred'], polygon_targets, polygon_masks, vertex_targets, polygon_vertex_targets, edge_targets, offset_targets)
         polygon_results.update(loss_polygon=loss_polygon)
         return polygon_results
 
-    def _polygon_forward(self, inputs, rois, gt_polygons=None):
+    def _polygon_forward(self, inputs, rois, gt_polygons=None, mask_pred=None):
         x = self.fusion_module(inputs)
         polygon_feats = self.polygon_roi_extractor([x], rois)
-        polygon_results = self.polygon_head(polygon_feats, gt_polygons)
+        polygon_results = self.polygon_head(polygon_feats, gt_polygons, mask_pred)
         return polygon_results
 
     def simple_test(self,
@@ -158,15 +170,16 @@ class PolygonRoIHead(StandardRoIHead, PolygonTestMixin):
         ]
 
         # 注释，通过polygon代替mask
-        # if not self.with_mask:
-        #     return bbox_results
-        # else:
-        #     segm_results = self.simple_test_mask(
-        #         x, img_metas, det_bboxes, det_labels, rescale=rescale)
-        #     return list(zip(bbox_results, segm_results))
+        if not self.with_mask:
+            mask_pred = None
+        else:
+            segm_results, mask_pred = self.simple_test_mask(
+                x, img_metas, det_bboxes, det_labels, rescale=rescale, with_mask_pred=True)
+                
+#             return list(zip(bbox_results, segm_results))
 
         if not self.with_polygon:
             return bbox_results
         else:
-            polygon_results = self.simple_test_polygon(x, img_metas, det_bboxes, det_labels, rescale=rescale)
+            polygon_results = self.simple_test_polygon(x, img_metas, det_bboxes, det_labels, rescale=rescale, mask_pred=mask_pred)
             return list(zip(bbox_results, polygon_results))

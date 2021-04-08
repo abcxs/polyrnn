@@ -1,0 +1,1 @@
+_base_ = './polyrnn_r50_fpn_1x_building.py'

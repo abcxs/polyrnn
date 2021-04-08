@@ -70,8 +70,10 @@ model = dict(
         polygon_head=dict(
             type='PolygonHead', 
             vertex_head=dict(
-                type='VertexHead',
-                polygon_size=28
+                type='VertexEdgeHead',
+                polygon_size=28,
+                conv_edge_channels=64, 
+                conv_vertex_channels=64
             ),
             polyrnn_head=dict(
                 type='PolyRnnHead',
@@ -80,7 +82,8 @@ model = dict(
                 max_time_step=20,
                 dilation_params=dict(with_dilation=False, dilations=[3, 3, 3, 3], num_convs=4),
                 weight_kernel_params=dict(kernel_size=1, type='constant'),
-                act_test='softmax'
+                act_test='softmax',
+                vertex_edge_params=dict(vertex_channels=64, edge_channels=64, type=0)
             ),
             loss_vertex=dict(
                 type='GaussianFocalLoss', alpha=2.0, gamma=4.0, loss_weight=1),

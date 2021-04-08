@@ -180,12 +180,14 @@ class MaskTestMixin(object):
                          img_metas,
                          det_bboxes,
                          det_labels,
-                         rescale=False):
+                         rescale=False, 
+                         with_mask_pred=False):
         """Simple test for mask head without augmentation."""
         # image shapes of images in the batch
         ori_shapes = tuple(meta['ori_shape'] for meta in img_metas)
         scale_factors = tuple(meta['scale_factor'] for meta in img_metas)
         num_imgs = len(det_bboxes)
+        mask_pred = None
         if all(det_bbox.shape[0] == 0 for det_bbox in det_bboxes):
             segm_results = [[[] for _ in range(self.mask_head.num_classes)]
                             for _ in range(num_imgs)]
@@ -237,6 +239,8 @@ class MaskTestMixin(object):
                         self.test_cfg, ori_shapes[i], scale_factors[i],
                         rescale)
                     segm_results.append(segm_result)
+        if with_mask_pred:
+            return segm_results, mask_pred
         return segm_results
 
     def aug_test_mask(self, feats, img_metas, det_bboxes, det_labels):
@@ -278,7 +282,8 @@ class PolygonTestMixin(object):
                             img_metas,
                             det_bboxes,
                             det_labels,
-                            rescale=False):
+                            rescale=False,
+                            mask_pred=None):
         """Simple test for polyon head without augmentation."""
         # image shapes of images in the batch
         ori_shapes = tuple(meta['ori_shape'] for meta in img_metas)
@@ -301,15 +306,23 @@ class PolygonTestMixin(object):
                 for i in range(len(det_bboxes))
             ]
             polygon_rois = bbox2roi(_bboxes)
-            polygon_results = self._polygon_forward(x, polygon_rois)
+            polygon_results = self._polygon_forward(x, polygon_rois, mask_pred=mask_pred)
             polygon_pred = polygon_results['polygon_pred']
-            first_vertex = polygon_results['first_vertex']
+            polygon_prob = polygon_results['polygon_prob']
+            polygon_offset = polygon_results['offset_pred']
+#             first_vertex = polygon_results['first_vertex']
             # split batch mask prediction back to each image
             num_mask_roi_per_img = [
                 det_bbox.shape[0] for det_bbox in det_bboxes
             ]
             polygon_preds = polygon_pred.split(num_mask_roi_per_img, 0)
-            first_vertexs = first_vertex.split(num_mask_roi_per_img, 0)
+            polygon_probs = [None for _ in range(len(num_mask_roi_per_img))]
+            polygon_offsets = [None for _ in range(len(num_mask_roi_per_img))]
+            if polygon_prob is not None:
+                polygon_probs = polygon_prob.split(num_mask_roi_per_img, 0)
+            if polygon_offset is not None:
+                polygon_offsets = polygon_offset.split(num_mask_roi_per_img, 0)
+#             first_vertexs = first_vertex.split(num_mask_roi_per_img, 0)
             # apply mask post-processing to each image individually
             polygon_results = []
             for i in range(num_imgs):
@@ -317,8 +330,9 @@ class PolygonTestMixin(object):
                     polygon_results.append(
                         [[] for _ in range(self.bbox_head.num_classes)])
                 else:
-                    polygon_result = self.polygon_head.get_polyons(first_vertexs[i],
-                            polygon_preds[i], _bboxes[i], det_labels[i],
+                    polygon_result = self.polygon_head.get_polyons(None,
+#                         first_vertexs[i],
+                            polygon_preds[i], polygon_probs[i], polygon_offsets[i], _bboxes[i], det_labels[i],
                             self.test_cfg, ori_shapes[i], scale_factors[i],
                             rescale, self.bbox_head.num_classes, det_others=det_bboxes[i][:, 4:])
                     polygon_results.append(polygon_result)
