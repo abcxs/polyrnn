@@ -7,6 +7,58 @@ import pycocotools.mask as maskUtils
 from mmdet.core import BitmapMasks, PolygonMasks
 from ..builder import PIPELINES
 
+import tifffile as tiff
+import os
+import cv2
+
+def read_tif(filename, channels=None):
+    assert os.path.exists(filename)
+    img = tiff.imread(filename)
+    if len(img.shape) < 3:
+        img = img[..., None]
+    img = img[:, :, :channels] if channels else img
+    return img
+
+@PIPELINES.register_module()
+class LoadTifFromFile(object):
+    def __init__(self, to_float32=False, channels=None, extra=None, channels_extra=None):
+        self.to_float32 = to_float32
+        self.channels = channels
+        self.extra = extra
+        self.channels_extra = channels_extra
+        assert self.extra is None or self.extra in ['pan', 'ms', 'fusion']
+
+    def __call__(self, results):
+        if results['img_prefix'] is not None:
+            filename = osp.join(results['img_prefix'],
+                                results['img_info']['filename'])
+        else:
+            filename = results['img_info']['filename']
+        img = read_tif(filename, self.channels)
+        if self.extra:
+            ori_type = None
+            for t in ['pan', 'ms', 'fusion']:
+                if t in filename:
+                    ori_type = t
+                    break
+            assert ori_type is not None
+            filename_extra = filename.replace(ori_type, self.extra)
+            img_extra = read_tif(filename_extra, self.channels_extra)
+            results['filename_extra'] = filename_extra
+            img = np.concatenate((img, img_extra), axis=-1)
+        if self.to_float32:
+            img = img.astype(np.float32)
+        results['filename'] = filename
+        results['ori_filename'] = results['img_info']['filename']
+        results['img'] = img
+        results['img_shape'] = img.shape
+        results['ori_shape'] = img.shape
+        results['img_fields'] = ['img']
+        return results
+
+    def __repr__(self):
+        return '{} (to_float32={},)'.format(
+            self.__class__.__name__, self.to_float32)
 
 @PIPELINES.register_module()
 class LoadImageFromFile(object):
@@ -355,7 +407,14 @@ class LoadAnnotations(object):
     def _load_polygons(self, results):
         results['polygon_fields'].append('gt_polygons')
         ann_info = results['ann_info']
-        results['gt_polygons'] = [np.array(polygons[0]).reshape(-1, 2) for polygons in ann_info['polygons']]
+        gt_polygons_ = [np.array(polygons[0]).reshape(-1, 2) for polygons in ann_info['polygons']]
+        gt_polygons = []
+        for poly in gt_polygons_:
+            if len(poly) > 64:
+                poly = poly.reshape(-1, 2).astype(np.float32)
+                poly = cv2.boxPoints(cv2.minAreaRect(poly)).reshape(-1, 2)
+            gt_polygons.append(poly)
+        results['gt_polygons'] = gt_polygons
         return results
 
     def __call__(self, results):

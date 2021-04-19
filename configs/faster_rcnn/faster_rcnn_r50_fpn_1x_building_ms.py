@@ -1,19 +1,20 @@
-_base_ = '../mask_rcnn/mask_rcnn_r50_fpn_1x_building.py'
+_base_ = [
+    '../_base_/models/faster_rcnn_r50_fpn.py',
+    '../_base_/datasets/building_detection.py',
+    '../_base_/schedules/schedule_1x.py', '../_base_/default_runtime.py'
+]
 model = dict(
-    type='MaskScoringRCNN',
+    pretrained='./checkpoints/resnet50-19c8e357.pth',
     roi_head=dict(
-        type='MaskScoringRoIHead',
-        mask_iou_head=dict(
-            type='MaskIoUHead',
-            num_convs=4,
-            num_fcs=2,
-            roi_feat_size=14,
-            in_channels=256,
-            conv_out_channels=256,
-            fc_out_channels=1024,
-            num_classes=1)),
-    # model training and testing settings
-    train_cfg=dict(rcnn=dict(mask_thr_binary=0.5)))
+        bbox_head=dict(num_classes=1)))
+optimizer = dict(lr=0.01)
+
+log_config = dict(
+    interval=50,
+    hooks=[
+        dict(type='TextLoggerHook'),
+        dict(type='TensorboardLoggerHook')
+    ])
 
 img_norm_cfg = dict(
     mean=[123.675, 116.28, 103.53], std=[58.395, 57.12, 57.375], to_rgb=True)
@@ -25,7 +26,7 @@ train_pipeline = [
     dict(type='Normalize', **img_norm_cfg),
     dict(type='Pad', size_divisor=32),
     dict(type='DefaultFormatBundle'),
-    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels', 'gt_masks']),
+    dict(type='Collect', keys=['img', 'gt_bboxes', 'gt_labels']),
 ]
 test_pipeline = [
     dict(type='LoadImageFromFile'),
