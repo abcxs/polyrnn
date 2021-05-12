@@ -571,7 +571,7 @@ class TFResNet(nn.Module):
                 stride=2,
                 padding=3,
                 bias=False)
-            if self.extra_channels and self.extra_channels != self.in_channels:
+            if self.extra_channels:
                 self.conv2 = build_conv_layer(
                     self.conv_cfg, 
                     self.extra_channels, 
@@ -641,19 +641,19 @@ class TFResNet(nn.Module):
         else:
             raise TypeError('pretrained must be a str or None')
 
-    def forward(self, x):
+    def forward(self, x, extra=False):
         """Forward function."""
         assert x.shape[1] in [self.in_channels, self.extra_channels]
-        if self.deep_stem:
-            x = self.stem(x)
+        assert not self.deep_stem
+        if not extra:
+            x = self.conv1(x)
+            x = self.norm1(x)
         else:
-            if x.shape[1] == self.in_channels:
-                x = self.conv1(x)
-                x = self.norm1(x)
-            else:
-                x = self.conv2(x)
-                x = self.norm2(x)
-            x = self.relu(x)
+            x = self.conv2(x)
+            x = self.norm2(x)
+        x = self.relu(x)
+            
+            
         x = self.maxpool(x)
         outs = []
         for i, layer_name in enumerate(self.res_layers):

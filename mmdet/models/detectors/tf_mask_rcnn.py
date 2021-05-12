@@ -41,9 +41,10 @@ class TFMaskRCNN(TwoStageDetector):
         if getattr(self, 'backbone_extra', None):
             x_extra = self.backbone_extra(img_extra)
         else:
-            x_extra = self.backbone(img_extra)
-
-        if self.fusion_type == 1:
+            x_extra = self.backbone(img_extra, extra=True)
+        if self.fusion_type == 0:
+            x = self.neck((x, x_extra))
+        elif self.fusion_type == 1:
             pan_weight = 1
             extra_weight = 1
             if self.weight:
@@ -55,5 +56,5 @@ class TFMaskRCNN(TwoStageDetector):
             if self.with_neck:
                 x = self.neck(x)
         else:
-            x = self.neck((x, x_extra))
-        return x 
+            raise NotImplementedError
+        return x

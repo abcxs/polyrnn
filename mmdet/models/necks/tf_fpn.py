@@ -103,7 +103,7 @@ class TFFPN(nn.Module):
         assert isinstance(add_extra_convs, (str, bool))
         if isinstance(add_extra_convs, str):
             # Extra_convs_source choices: 'on_input', 'on_lateral', 'on_output'
-            assert add_extra_convs in ('on_output', )
+            assert add_extra_convs in ('on_input', 'on_lateral', 'on_output')
         elif add_extra_convs:  # True
             if extra_convs_on_inputs:
                 # TODO: deprecate `extra_convs_on_inputs`
@@ -179,8 +179,9 @@ class TFFPN(nn.Module):
                 xavier_init(m, distribution='uniform')
 
     @auto_fp16()
-    def forward(self, x1, x2):
+    def forward(self, x):
         """Forward function."""
+        x1, x2 = x
         assert len(x1) == len(self.in_channels)
         assert len(x2) == len(self.in_channels)
 
@@ -210,6 +211,8 @@ class TFFPN(nn.Module):
                 x = torch.cat((laterals_1[i], laterals_2[i], x), dim=1)
             x = self.fpn_convs[i](x)
             outs.append(x)
+        
+        outs = outs[::-1]
 
         # part 2: add extra levels
         if self.num_outs > len(outs):
@@ -220,7 +223,11 @@ class TFFPN(nn.Module):
                     outs.append(F.max_pool2d(outs[-1], 1, stride=2))
             # add conv layers on top of original feature maps (RetinaNet)
             else:
-                if self.add_extra_convs == 'on_output':
+                if self.add_extra_convs == 'on_input':
+                    extra_source = inputs[self.backbone_end_level - 1]
+                elif self.add_extra_convs == 'on_lateral':
+                    extra_source = laterals[-1]
+                elif self.add_extra_convs == 'on_output':
                     extra_source = outs[-1]
                 else:
                     raise NotImplementedError

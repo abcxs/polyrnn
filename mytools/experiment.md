@@ -21,7 +21,8 @@
 
 1. inference_last/1 0405_1 kernel_size=3 gaussian
 2. inference_last/2 0405_1 kernel_size=5 gaussian
-
+3. inference_last/4 0409_2 kernel_size=3 gaussian
+4. inference_last/5 0409_1 kernel_size=3 gaussian
 work_dir | map | ap@50 | ap@75 | ap@small | ap@medium | ap@large
 - | - | - | - | - | - | - 
 mask | 40.7/38.4 | 62.0/60.8 | 45.3/43.3 | 25.8/24.3 | 49.0/47.1 | 49.5/44.2
@@ -62,7 +63,8 @@ work_dir | dtype | kernel_size | map | ap@50 | ap@75 | ap@small | ap@medium | ap
 - | - | - | - | - | - | - | - | -
 inference_last/1 | gaussian | 3 | 34.2 | 58.7 | 37.5 | 26.4 | 41.7 | 32.8
 inference_last/2 | gaussian | 5 | 34.2 | 58.6 | 37.6 | 26.4 | 41.8 | 32.7
-
+inference_last/4 | gaussian | 3 | 38.0 | 61.2 | 42.1 | 30.3 | 46.6 | 34.3
+inference_last/5 | gaussian | 3 | 36.4 | 59.9 | 39.9 | 26.6 | 44.4 | 36.6
 
 使用位置信息
 work_dir | with_coord | map | ap@50 | ap@75 | ap@small | ap@medium | ap@large
@@ -118,6 +120,7 @@ work_dir | map | ap@50 | ap@75 | ap@small | ap@medium | ap@large
 3. 1_3 kernel_size=3 constant
 4. 1_4 kernel_size=5 constant
 5. 2 kernel_size=3 gaussian, 基于所有
+6. 多尺度+2
 work_dir | map | ap@50 | ap@75 | ap@small | ap@medium | ap@large
 - | - | - | - | - | - | - 
 inference_last_tf/1_1 | 30.4 | 57.2 | 29.4 | 25.6 | 38.5 | 38.5
@@ -125,10 +128,9 @@ inference_last_tf/1_2 | 30.4 | 57.2 | 29.4 | 25.6 | 38.5 | 38.6
 inference_last_tf/1_3 | 28.5 | 56.2 | 26.0 | 25.2 | 34.8 | 33.0
 inference_last_tf/1_4 | 20.9 | 50.8 | 10.9 | 20.9 | 23.5 | 16.7
 inference_last_tf/2 | 31.5 | 58.0 | 30.5 | 26.6 | 39.6 | 41.9
+inference_last_tf/3 | 34.8 | 63.9 | 34.1 | 31.9 | 40.1 | 40.3
 
 rect_mask_yunnan | 31.5 | 58.1 | 32.3 | 21.0 | 38.8 | 35.0
 poly_mask_yunnan | 31.9 | 58.4 | 33.3 | 21.1 | 39.3 | 36.1
 rect_mask_jinan | 29.9 | 57.8 | 27.6 | 24.8 | 38.0 | 40.9
 poly_mask_jinan | 29.6 | 57.4 | 27.4 | 24.7 | 37.7 | 41.0
-0.319 0.584 0.333 0.211 0.393 0.361
-0.296 0.574 0.274 0.247 0.377 0.410
