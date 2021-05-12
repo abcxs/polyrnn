@@ -1,0 +1,1 @@
+_base_ = './tf_faster_rcnn_r50_fpn_1x_building.py'
