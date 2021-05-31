@@ -11,6 +11,7 @@ import cv2
 from scipy.ndimage.morphology import distance_transform_cdt
 from mmdet.models.utils import gen_gaussian_target, Bottleneck, gaussian2D
 
+# 部分由于历史问题，去做兼容，导致额外的东西
 @HEADS.register_module()
 class VertexHead(nn.Module):
     def __init__(self, num_convs=2, in_channels=256, conv_kernel_size=3, conv_out_channels=256, polygon_size=None, conv_cfg=None, norm_cfg=None):
@@ -494,6 +495,8 @@ class PolyRnnHead(nn.Module):
 #             print('*' * 20)
         return logits, probs, offsets
     
+    # 与forward不一致，未更新
+    # 之前版本效果变差，可能实现有问题
     def forward_beam(self, x, vertex_pred, gt_polygons=None, mask_pred=None):
         # 测试流程时，gt_polygons可为None
         n, c, h, w = x.shape
@@ -877,6 +880,7 @@ class PolygonHead(nn.Module):
         im_mask = np.zeros((N, img_h, img_w), dtype=np.uint8)
         bboxes = bboxes.detach().cpu().numpy()
 
+        all_poly_xy = []
         for i in range(N):
             x1, y1, x2, y2 = bboxes[i]
             # [time_step]
@@ -906,12 +910,16 @@ class PolygonHead(nn.Module):
                 poly_offset = poly_offset[:len(poly_xy) - 1]
                 poly_xy[1:] = poly_xy[1:] + poly_offset
             poly_xy = poly_xy * ([(x2 - x1) / grid_w, (y2 - y1) / grid_w]) + [x1, y1]
+            all_poly_xy.append(poly_xy)
             poly_xy = poly_xy.astype(np.int32)
             if len(poly_xy) > 2:
                 im_mask[i] = cv2.fillPoly(im_mask[i], [poly_xy], 255)
 
         polyon_segms = [[] for _ in range(num_classes)]  # BG is not included in num_classes
-
+        # 0520 增加返回点的具体位置
+        # mask再拟合会使得点数增多
+        polygon_points = [[] for _ in range(num_classes)]
         for i in range(N):
             polyon_segms[labels[i]].append(im_mask[i])
-        return polyon_segms
+            polygon_points[labels[i]].append(all_poly_xy[i].reshape(-1).tolist())
+        return polyon_segms, polygon_points

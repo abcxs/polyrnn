@@ -1,5 +1,7 @@
 _base_ = './polyrnn_r50_fpn_1x_building_edge.py'
 model=dict(roi_head=dict(polygon_head=dict(polyrnn_head=dict(use_coord=True, with_offset=True))))
+# 检测上的预训练权重
+# 收益不确定
 load_from = './venus_last/14/latest.pth'
 
 img_norm_cfg = dict(

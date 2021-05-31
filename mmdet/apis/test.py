@@ -52,6 +52,7 @@ def single_gpu_test(model,
                     show_score_thr=0.3):
     model.eval()
     results = []
+    eval_results = []
     dataset = data_loader.dataset
     prog_bar = mmcv.ProgressBar(len(dataset))
     for i, data in enumerate(data_loader):
@@ -86,22 +87,28 @@ def single_gpu_test(model,
 
                 model.module.show_result(
                     img_show,
-                    result[i],
+                    result[i][:2],
                     show=show,
                     out_file=out_file,
                     score_thr=show_score_thr)
 
         # encode mask results
+        
         if isinstance(result[0], tuple):
-            result = [(bbox_results, encode_mask_results(mask_results))
-                      for bbox_results, mask_results in result]
+            if len(result[0]) == 3:
+                result = [(bbox_results, encode_mask_results(mask_results), poly_points)
+                      for bbox_results, mask_results, poly_points in result]
+            else:
+                result = [(bbox_results, encode_mask_results(mask_results))
+                        for bbox_results, mask_results in result]
         results.extend(result)
+        eval_results.extend([res[:2] for res in result])
 
         for _ in range(batch_size):
             prog_bar.update()
-    return results
+    return results, eval_results
 
-
+# 没有同步single_gpu_test 可能会有问题
 def multi_gpu_test(model, data_loader, tmpdir=None, gpu_collect=False):
     """Test model with multiple gpus.
 

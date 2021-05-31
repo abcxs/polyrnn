@@ -1,0 +1,42 @@
+<!DOCTYPE html>  
+<html lang="en">  
+<head>  
+    <meta charset="UTF-8">  
+    <title>Document</title>  
+    <script type="text/javascript" src="http://libs.baidu.com/jquery/1.10.2/jquery.min.js"></script>  
+    <script type="text/javascript">  
+    $(function(){  
+        $(".file").change(function(){  
+            var fileImg = $(".fileImg");  
+            var explorer = navigator.userAgent;  
+            var imgSrc = $(this)[0].value;  
+            if (explorer.indexOf('MSIE') >= 0) {  
+                if (!/\.(jpg|jpeg|png|JPG|PNG|JPEG)$/.test(imgSrc)) {  
+                    return false;  
+                }else{  
+					console.log(imgSrc);
+                    fileImg.attr("src", imgSrc);  
+                }  
+            }else{
+                if (!/\.(jpg|jpeg|png|JPG|PNG|JPEG)$/.test(imgSrc)) {  
+                    return false;  
+                }else{  
+                    var file = $(this)[0].files[0];  
+                    var url = URL.createObjectURL(file);
+					console.log(url);
+                    fileImg.attr("src", url);  
+                }  
+            }  
+        })  
+    })  
+    </script>  
+</head>  
+<body>
+    <form method="POST" enctype="multipart/form-data">
+        <input type="file" name='file', class='file'>
+        <input type="submit" value="Upload">
+    </form>
+    <img src="" class="fileImg">
+    <img src="data:image/jpeg;base64,{{ img_stream }}">
+</body>  
+</html>

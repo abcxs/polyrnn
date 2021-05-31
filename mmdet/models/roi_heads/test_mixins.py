@@ -290,7 +290,9 @@ class PolygonTestMixin(object):
         scale_factors = tuple(meta['scale_factor'] for meta in img_metas)
         num_imgs = len(det_bboxes)
         if all(det_bbox.shape[0] == 0 for det_bbox in det_bboxes):
-            polygon_results = [[[] for _ in range(self.bbox_head.num_classes)]
+            polygon_mask_results = [[[] for _ in range(self.bbox_head.num_classes)]
+                            for _ in range(num_imgs)]
+            polygon_points_results = [[[] for _ in range(self.bbox_head.num_classes)]
                             for _ in range(num_imgs)]
         else:
             # if det_bboxes is rescaled to the original image size, we need to
@@ -324,16 +326,19 @@ class PolygonTestMixin(object):
                 polygon_offsets = polygon_offset.split(num_mask_roi_per_img, 0)
 #             first_vertexs = first_vertex.split(num_mask_roi_per_img, 0)
             # apply mask post-processing to each image individually
-            polygon_results = []
+            polygon_mask_results = []
+            polygon_points_results = []
+
             for i in range(num_imgs):
                 if det_bboxes[i].shape[0] == 0:
                     polygon_results.append(
                         [[] for _ in range(self.bbox_head.num_classes)])
                 else:
-                    polygon_result = self.polygon_head.get_polyons(None,
+                    polygon_mask, polygon_points = self.polygon_head.get_polyons(None,
 #                         first_vertexs[i],
                             polygon_preds[i], polygon_probs[i], polygon_offsets[i], _bboxes[i], det_labels[i],
                             self.test_cfg, ori_shapes[i], scale_factors[i],
                             rescale, self.bbox_head.num_classes, det_others=det_bboxes[i][:, 4:])
-                    polygon_results.append(polygon_result)
-        return polygon_results
+                    polygon_mask_results.append(polygon_mask)
+                    polygon_points_results.append(polygon_points)
+        return polygon_mask_results, polygon_points_results

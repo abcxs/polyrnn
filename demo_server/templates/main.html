@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>主菜单</title>
+<style>
+
+h1 {
+display: block;
+font-size: 4.5em;
+text-align: center;
+font-weight: bold;
+color: #2D526D
+}
+
+.button1 {
+    background-color: #2D526D;
+    border: none;
+    color: white;
+    padding: 15px 32px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 40px;
+    cursor: pointer;
+    margin: auto;
+    width: 100%;
+}
+.button2 {
+    background-color: #2D526D;
+    border: none;
+    color: white;
+    padding: 15px 32px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 40px;
+    cursor: pointer;
+    margin: auto;
+    width: 100%;
+}
+.button3 {
+    background-color: #2D526D;
+    border: none;
+    color: white;
+    padding: 15px 32px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 40px;
+    cursor: pointer;
+    margin: auto;
+    width: 100%;
+
+}
+</style>
+</head>
+<body>
+<h1>多模态遥感影像中的建筑物检测与分割技术研究</h1>
+<button  class="button1" onclick="location.href='/predict_box_tf'">建筑物检测（多模态数据）</button>
+<button class="button2" onclick="location.href='/predict_polygon_tf'">建筑物分割（多模态数据）</button>
+<button class="button3" onclick="location.href='/predict_polygon_rgb'">建筑物分割（RGB数据）</button>
+</body>
+</html>

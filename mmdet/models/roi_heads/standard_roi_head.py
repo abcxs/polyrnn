@@ -253,7 +253,6 @@ class StandardRoIHead(BaseRoIHead, BBoxTestMixin, MaskTestMixin):
                 return det_bboxes, det_labels, segm_results
             else:
                 return det_bboxes, det_labels
-
         bbox_results = [
             bbox2result(det_bboxes[i], det_labels[i],
                         self.bbox_head.num_classes)

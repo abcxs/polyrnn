@@ -181,5 +181,5 @@ class PolygonRoIHead(StandardRoIHead, PolygonTestMixin):
         if not self.with_polygon:
             return bbox_results
         else:
-            polygon_results = self.simple_test_polygon(x, img_metas, det_bboxes, det_labels, rescale=rescale, mask_pred=mask_pred)
-            return list(zip(bbox_results, polygon_results))
+            polygon_mask_results, polygon_points_results = self.simple_test_polygon(x, img_metas, det_bboxes, det_labels, rescale=rescale, mask_pred=mask_pred)
+            return list(zip(bbox_results, polygon_mask_results, polygon_points_results))

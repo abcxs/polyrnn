@@ -1,0 +1,33 @@
+<!DOCTYPE html>  
+<html lang="en">  
+<head>  
+    <meta charset="UTF-8">  
+    <title>Document</title>
+</head>
+<style>
+h1 {
+display: block;
+font-size: 3.5em;
+text-align: center;
+font-weight: bold;
+color: #2000d8
+}
+h2 {
+text-align: center;
+}
+img{
+margin-left: 32.5%;
+margin-bottom: 2%;
+padding: 1em;
+border: 2px solid #CCC;
+border-radius: 1em;
+}
+</style>  
+<body>
+    <h1>基于双流网络的建筑物检测（多模态数据)</h1>
+    <h2>原图-融合影像</h2>
+    <img src="data:image/jpeg;base64,{{ src_img_stream }}">
+    <h2>检测结果</h2>
+    <img src="data:image/jpeg;base64,{{ det_img_stream }}">
+</body>  
+</html>
